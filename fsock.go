@@ -35,7 +35,7 @@ func init() {
 func NewFSock(fsaddr, fspaswd string, reconnects int,
 	eventHandlers map[string][]func(string, int),
 	eventFilters map[string][]string,
-	l logger, connIdx int, bgapiSup bool) (fsock *FSock, err error) {
+	l logger, connIdx int, bgapiSubsc bool) (fsock *FSock, err error) {
 	if l == nil {
 		l = nopLogger{}
 	}
@@ -51,7 +51,7 @@ func NewFSock(fsaddr, fspaswd string, reconnects int,
 		reconnects:      reconnects,
 		delayFunc:       DelayFunc(),
 		logger:          l,
-		bgapiSup:        bgapiSup,
+		bgapiSubsc:      bgapiSubsc,
 	}
 	if err = fsock.Connect(); err != nil {
 		return nil, err
@@ -76,7 +76,7 @@ type FSock struct {
 	stopReadEvents  chan struct{} //Keep a reference towards forkedReadEvents so we can stop them whenever necessary
 	errReadEvents   chan error
 	logger          logger
-	bgapiSup        bool
+	bgapiSubsc      bool
 }
 
 // Connect or reconnect
@@ -120,12 +120,12 @@ func (fs *FSock) connect() (err error) {
 		return
 	}
 
-	if err = fs.filterEvents(fs.eventFilters, fs.bgapiSup); err != nil {
+	if err = fs.filterEvents(fs.eventFilters, fs.bgapiSubsc); err != nil {
 		return
 	}
 
 	// Subscribe to events handled by event handlers
-	if err = fs.eventsPlain(getMapKeys(fs.eventHandlers), fs.bgapiSup); err != nil {
+	if err = fs.eventsPlain(getMapKeys(fs.eventHandlers), fs.bgapiSubsc); err != nil {
 		return
 	}
 	go fs.readEvents() // Fork read events in it's own goroutine
@@ -370,7 +370,7 @@ func (fs *FSock) readEvents() {
 }
 
 // Subscribe to events
-func (fs *FSock) eventsPlain(events []string, bgapiSup bool) (err error) {
+func (fs *FSock) eventsPlain(events []string, bgapiSubsc bool) (err error) {
 	eventsCmd := "event plain"
 	customEvents := ""
 	for _, ev := range events {
@@ -385,7 +385,7 @@ func (fs *FSock) eventsPlain(events []string, bgapiSup bool) (err error) {
 		eventsCmd += " " + ev
 	}
 	if eventsCmd != "event plain all" {
-		if bgapiSup {
+		if bgapiSubsc {
 			eventsCmd += " BACKGROUND_JOB" // For bgapi
 		}
 		if len(customEvents) != 0 { // Add CUSTOM events subscribing in the end otherwise unexpected events are received
@@ -409,11 +409,11 @@ func (fs *FSock) eventsPlain(events []string, bgapiSup bool) (err error) {
 }
 
 // Enable filters
-func (fs *FSock) filterEvents(filters map[string][]string, bgapiSup bool) (err error) {
+func (fs *FSock) filterEvents(filters map[string][]string, bgapiSubsc bool) (err error) {
 	if len(filters) == 0 {
 		return nil
 	}
-	if bgapiSup {
+	if bgapiSubsc {
 		filters["Event-Name"] = append(filters["Event-Name"], "BACKGROUND_JOB") // for bgapi
 	}
 	for hdr, vals := range filters {
@@ -490,7 +490,7 @@ func (fs *FSock) doBackgroundJob(event string) { // add mutex protection
 // Instantiates a new FSockPool
 func NewFSockPool(maxFSocks int, fsaddr, fspasswd string, reconnects int, maxWaitConn time.Duration,
 	eventHandlers map[string][]func(string, int), eventFilters map[string][]string,
-	l logger, connIdx int, bgapiSup bool) *FSockPool {
+	l logger, connIdx int, bgapiSubsc bool) *FSockPool {
 	if l == nil {
 		l = nopLogger{}
 	}
@@ -505,7 +505,7 @@ func NewFSockPool(maxFSocks int, fsaddr, fspasswd string, reconnects int, maxWai
 		logger:        l,
 		allowedConns:  make(chan struct{}, maxFSocks),
 		fSocks:        make(chan *FSock, maxFSocks),
-		bgapiSup:      bgapiSup,
+		bgapiSubsc:    bgapiSubsc,
 	}
 	for i := 0; i < maxFSocks; i++ {
 		pool.allowedConns <- struct{}{} // Empty initiate so we do not need to wait later when we pop
@@ -525,7 +525,7 @@ type FSockPool struct {
 	allowedConns  chan struct{} // Will be populated with members allowed
 	fSocks        chan *FSock   // Keep here reference towards the list of opened sockets
 	maxWaitConn   time.Duration // Maximum duration to wait for a connection to be returned by Pop
-	bgapiSup      bool
+	bgapiSubsc    bool
 }
 
 func (fs *FSockPool) PopFSock() (fsock *FSock, err error) {
@@ -543,7 +543,7 @@ func (fs *FSockPool) PopFSock() (fsock *FSock, err error) {
 		return
 	case <-fs.allowedConns:
 		tm.Stop()
-		return NewFSock(fs.fsAddr, fs.fsPasswd, fs.reconnects, fs.eventHandlers, fs.eventFilters, fs.logger, fs.connIdx, fs.bgapiSup)
+		return NewFSock(fs.fsAddr, fs.fsPasswd, fs.reconnects, fs.eventHandlers, fs.eventFilters, fs.logger, fs.connIdx, fs.bgapiSubsc)
 	case <-tm.C:
 		return nil, ErrConnectionPoolTimeout
 	}

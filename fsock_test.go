@@ -774,7 +774,7 @@ func TestFSockNewFSockPool(t *testing.T) {
 		logger:        nopLogger{},
 		allowedConns:  nil,
 		fSocks:        nil,
-		bgapiSup:      true,
+		bgapiSubsc:    true,
 	}
 	fsnew := NewFSockPool(maxFSocks, fsaddr, fspw, reconns, maxWait, evHandlers, evFilters, nil, connIdx, true)
 	fsnew.allowedConns = nil
